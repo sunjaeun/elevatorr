@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elevator Simulator</title>
+    <style>
+        #building {
+            width: 200px;
+            height: 700px;
+            border: 1px solid black;
+            position: relative;
+            overflow: hidden;
+        }
+        #elevator {
+            width: 100%;
+            height: 100px;
+            background-color: grey;
+            position: absolute;
+            bottom: 0;
+        }
+        .floor {
+            height: 100px;
+            border-bottom: 1px solid black;
+            text-align: center;
+            line-height: 100px;
+        }
+        #dashboard {
+            margin-top: 20px;
+        }
+        #graph-container {
+            margin-top: 20px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>Elevator Simulator</h1>
+    <label for="acceleration">Acceleration (m/s²): </label>
+    <input type="number" id="acceleration" value="0.5" step="0.1" min="0">
+    <br><br>
+    <label for="deceleration">Deceleration (m/s²): </label>
+    <input type="number" id="deceleration" value="0.5" step="0.1" min="0">
+    <br><br>
+    <label for="floor">Select Floor (1-7): </label>
+    <input type="number" id="floor" min="1" max="7">
+    <button onclick="moveElevator()">Go</button>
+    <br><br>
+    <div id="speedDisplay">Current Settings: Acceleration: 0.5 m/s², Deceleration: 0.5 m/s²</div>
+    <br>
+    <label for="noiseCheckbox">Enable Noise</label>
+    <input type="checkbox" id="noiseCheckbox">
+    <div id="building">
+        <div class="floor">Floor 7</div>
+        <div class="floor">Floor 6</div>
+        <div class="floor">Floor 5</div>
+        <div class="floor">Floor 4</div>
+        <div class="floor">Floor 3</div>
+        <div class="floor">Floor 2</div>
+        <div class="floor">Floor 1</div>
+        <div id="elevator"></div>
+    </div>
+    <div id="dashboard">
+        <div>Current Speed: <span id="currentSpeed">0</span> m/s</div>
+    </div>
+    <div id="graph-container">
+        <canvas id="accelerationGraph"></canvas>
+    </div>
+
+    <script>
+        let currentFloor = 0;
+        let acceleration = 0.5;
+        let deceleration = 0.5;
+        let currentSpeed = 0;
+        let targetFloor = 0;
+        let totalTime = 0;
+        let isMoving = false;
+        let previousTime = 0;
+        let startTime = null;
+        let elevator = document.getElementById('elevator');
+        let buildingHeight = document.getElementById('building').clientHeight;
+        let floors = document.getElementsByClassName('floor').length;
+        let floorHeight = buildingHeight / floors;
+
+        const accelerationData = {
+            labels: [],
+            datasets: [{
+                label: 'Speed (m/s)',
+                data: [],
+                fill: false,
+                borderColor: 'red',
+                tension: 0.1
+            }]
+        };
+
+        const config = {
+            type: 'line',
+            data: accelerationData,
+            options: {
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time (s)'
+                        },
+                        ticks: {
+                            stepSize: 1
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Speed (m/s)'
+                        },
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        };
+
+        const accelerationGraph = new Chart(
+            document.getElementById('accelerationGraph'),
+            config
+        );
+
+        document.getElementById('acceleration').addEventListener('input', updateSettingsDisplay);
+        document.getElementById('deceleration').addEventListener('input', updateSettingsDisplay);
+
+        function updateSettingsDisplay() {
+            acceleration = parseFloat(document.getElementById('acceleration').value);
+            deceleration = parseFloat(document.getElementById('deceleration').value);
+            document.getElementById('speedDisplay').innerText = `Current Settings: Acceleration: ${acceleration} m/s², Deceleration: ${deceleration} m/s²`;
+        }
+
+        function updateSpeedDisplay() {
+            document.getElementById('currentSpeed').innerText = currentSpeed.toFixed(2);
+        }
+
+        function moveElevator() {
+            targetFloor = parseInt(document.getElementById('floor').value);
+            if (isNaN(targetFloor) || targetFloor < 1 || targetFloor > 7) {
+                alert("Please select a valid floor (1-7).");
+                return;
+            }
+            if (isMoving) {
+                return; // Prevent multiple calls while moving
+            }
+            isMoving = true;
+            startElevatorMovement();
+        }
+
+        function startElevatorMovement() {
+            const targetPosition = (targetFloor - 1) * floorHeight;
+            const totalDistance = Math.abs(currentFloor - (targetFloor - 1)) * floorHeight;
+
+            // Calculate the time for each phase
+            const timeForEachPhase = Math.sqrt(totalDistance / (acceleration + deceleration));
+
+            const accelerationTime = timeForEachPhase;
+            const decelerationTime = timeForEachPhase;
+            const constantSpeedTime = timeForEachPhase;
+
+            const maxSpeed = acceleration * accelerationTime;
+
+            totalTime = accelerationTime + constantSpeedTime + decelerationTime;
+
+            let elapsedTime = 0;
+            let distanceCovered = 0;
+
+            accelerationData.labels = [];
+            accelerationData.datasets[0].data = [];
+
+            function getNoise() {
+                return document.getElementById('noiseCheckbox').checked ? (Math.random() - 3) * 0.2 : 0; // Random noise between -0.1 and 0.1 if enabled
+            }
+
+            function animateElevator(time) {
+                if (!startTime) startTime = time;
+                const deltaTime = (time - previousTime) / 1000; // convert to seconds
+                previousTime = time;
+                elapsedTime = (time - startTime) / 1000; // convert to seconds
+
+                let speedNoise = getNoise();
+
+                if (elapsedTime <= accelerationTime) {
+                    currentSpeed = acceleration * elapsedTime + speedNoise;
+                    distanceCovered = 0.5 * acceleration * Math.pow(elapsedTime, 2);
+                } else if (elapsedTime <= accelerationTime + constantSpeedTime) {
+                    currentSpeed = maxSpeed + speedNoise;
+                    distanceCovered = (0.5 * acceleration * Math.pow(accelerationTime, 2)) + maxSpeed * (elapsedTime - accelerationTime);
+                } else if (elapsedTime <= totalTime) {
+                    const timeInDeceleration = elapsedTime - accelerationTime - constantSpeedTime;
+                    currentSpeed = maxSpeed - deceleration * timeInDeceleration + speedNoise;
+                    distanceCovered = (0.5 * acceleration * Math.pow(accelerationTime, 2)) + (maxSpeed * constantSpeedTime) + (maxSpeed * timeInDeceleration - 0.5 * deceleration * Math.pow(timeInDeceleration, 2));
+                } else {
+                    distanceCovered = totalDistance;
+                    currentSpeed = 0;
+                    isMoving = false;
+                    currentFloor = targetFloor - 1; // Update current floor after reaching target
+                }
+
+                // Ensure elevator stays within building bounds
+                distanceCovered = Math.min(distanceCovered, totalDistance);
+                elevator.style.bottom = `${(currentFloor * floorHeight) + distanceCovered}px`;
+
+                // Adjust to the correct floor if needed
+                if (!isMoving) {
+                    const adjustedPosition = targetPosition;
+                    elevator.style.bottom = `${Math.min(adjustedPosition, (currentFloor * floorHeight) + distanceCovered)}px`;
+                }
+
+                updateSpeedDisplay();
+                updateGraph(elapsedTime, currentSpeed);
+
+                if (isMoving) requestAnimationFrame(animateElevator);
+            }
+
+            function updateGraph(time, speed) {
+                accelerationData.labels.push(time.toFixed(2));
+                accelerationData.datasets[0].data.push(speed.toFixed(2));
+                accelerationGraph.update();
+            }
+
+            previousTime = performance.now(); // Initialize previousTime for smooth animation
+            requestAnimationFrame(animateElevator);
+        }
+    </script>
+</body>
+</html>
